@@ -29,7 +29,7 @@ app.use((req, res, next) => {
 // Get a list of all needs in geo response
 app.get('needs/', (req, res) =>
     needs(config, db)
-        .all(req.query.is_training)
+        .all(req.query.is_training, req.query.admin)
         .then((data) => {
             // To map requested items against requested quantities
             const formattedData = data.map((entry) => {
@@ -213,9 +213,9 @@ app.delete('needs/giver-details/:id', (req, res) =>
         })
 )
 
-app.delete('needs/need-details', (req,res) => 
+app.patch('needs/need-details', (req,res) => 
     needs(config, db)
-    .deleteNeedDetails()
+    .UpdateTrainingNeed()
     .then(async (data) => {
         console.log('🚀 ~ .then ~ data:', data)
         // Send Notification

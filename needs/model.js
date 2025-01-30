@@ -16,7 +16,7 @@ const { TABLE_COGNICITY_PARTNERS, TABLE_LOGISTICS_GIVER_DETAILS } = require('../
 
 const needs = (config, db) => ({
     // A list of all infrastructure matching a given type
-    all: (is_training) =>
+    all: (is_training, admin) =>
         new Promise((resolve, reject) => {
             // Setup query
             const query = `SELECT 
@@ -29,12 +29,13 @@ const needs = (config, db) => ({
 			ARRAY_AGG(nr.description) AS all_descriptions,
 			ARRAY_AGG(DISTINCT nr.item_id) AS all_item_ids,
 			COALESCE(SUM(CAST(gd.quantity_satisfied AS integer)), 0) AS total_quantity_satisfied,
-            nr.is_training
+            nr.is_training,
+            nr.tags
 		FROM 
 			${config.TABLE_LOGISTICS_NEEDS} nr
 		LEFT JOIN 
 			${config.TABLE_LOGISTICS_GIVER_DETAILS} gd ON gd.need_id = nr.id
-        WHERE nr.status NOT IN ('EXPIRED', 'SATISFIED')
+        WHERE nr.status NOT IN ('EXPIRED')
         AND (
             ($1::boolean IS NULL OR nr.is_training = $1)
             AND (
@@ -42,15 +43,17 @@ const needs = (config, db) => ({
                 OR (nr.is_training = false AND ($1 = false OR $1 IS NULL))
             )
         )
+        AND ($2::text IS NULL OR tags->>'instance_region_code'=$2::text)
 		GROUP BY 
-        nr.need_request_id, nr.status, nr.created_date , ST_AsBinary(nr.the_geom), nr.is_training
+        nr.need_request_id, nr.status, nr.created_date , ST_AsBinary(nr.the_geom), nr.is_training, nr.tags
 		ORDER BY nr.created_date DESC;`
 
             const isTraining = is_training?.toString() ? is_training : null
+            const adminType = admin || null
             // Execute
             db.query(query, {
                 type: QueryTypes.SELECT,
-                bind: [isTraining],
+                bind: [isTraining, adminType],
             })
                 .then((data) => {
                     resolve(data)
@@ -475,14 +478,15 @@ const needs = (config, db) => ({
         })
     },
 
-    deleteNeedDetails: () => {
+    UpdateTrainingNeed: () => {
         return new Promise((resolve, reject) => {
-            const query = `DELETE FROM ${config.TABLE_LOGISTICS_NEEDS}
+            const query = `UPDATE ${config.TABLE_LOGISTICS_NEEDS}
+            SET status = 'EXPIRED'
             WHERE is_training = true
-            AND created_date <= NOW() - INTERVAL '1 hour';`
+            AND created_date <= NOW() - INTERVAL '3 hour';`
 
             db.query(query, {
-                type: QueryTypes.DELETE,
+                type: QueryTypes.UPDATE,
             })
                 .then((data) => {
                     resolve(data)
